@@ -1,7 +1,7 @@
 # Community Cloud suspends an app that has not been visited for a while, and
 # the next visitor is met with "This app has gone to sleep due to inactivity"
 # inside the frame -- which, arriving from a button on driveresearch.tech,
-# reads as broken. This is a request every six hours so that never happens.
+# reads as broken. This is a daily request so that never happens.
 #
 # Once a day. The idle threshold is not documented anywhere Streamlit publishes,
 # but every account of it puts it in days rather than hours, so one request each
