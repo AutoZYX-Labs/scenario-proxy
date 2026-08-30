@@ -3,15 +3,18 @@
 # inside the frame -- which, arriving from a button on driveresearch.tech,
 # reads as broken. This is a request every six hours so that never happens.
 #
-# Four requests a day, not hourly: enough to stay inside any plausible idle
-# threshold without pretending to be traffic.
+# Once a day. The idle threshold is not documented anywhere Streamlit publishes,
+# but every account of it puts it in days rather than hours, so one request each
+# morning should sit comfortably inside it -- and it is about as little
+# synthetic traffic as the job can send and still do its work.
 name: keep-warm
 
 on:
   schedule:
-    # Not on the hour. GitHub queues scheduled jobs and the top of the hour is
-    # its busiest slot, so a job asked for at :00 can be delayed by a lot.
-    - cron: "17 */6 * * *"
+    # 04:17 UTC. Not on the hour, because GitHub queues scheduled jobs and the
+    # top of the hour is its busiest slot; and early, so the app is warm before
+    # anyone is likely to follow the button from driveresearch.tech.
+    - cron: "17 4 * * *"
   workflow_dispatch:
 
 jobs:
