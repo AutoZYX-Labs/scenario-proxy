@@ -1,0 +1,32 @@
+# Community Cloud suspends an app that has not been visited for a while, and
+# the next visitor is met with "This app has gone to sleep due to inactivity"
+# inside the frame -- which, arriving from a button on driveresearch.tech,
+# reads as broken. This is a request every six hours so that never happens.
+#
+# Four requests a day, not hourly: enough to stay inside any plausible idle
+# threshold without pretending to be traffic.
+name: keep-warm
+
+on:
+  schedule:
+    # Not on the hour. GitHub queues scheduled jobs and the top of the hour is
+    # its busiest slot, so a job asked for at :00 can be delayed by a lot.
+    - cron: "17 */6 * * *"
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Wake the app
+        run: |
+          # The embed URL, not the bare one: a direct visit answers 303 through
+          # a session handshake, which would make a healthy app look broken.
+          URL="https://scenario-engine.streamlit.app/?embed=true&embed_options=light_theme"
+          code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 120 "$URL")
+          echo "HTTP $code"
+          if [ "$code" != "200" ]; then
+            echo "::error::app did not answer 200 -- it may be sleeping, broken, or renamed"
+            exit 1
+          fi
