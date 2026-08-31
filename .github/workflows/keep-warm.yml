@@ -30,6 +30,12 @@ jobs:
           code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 120 "$URL")
           echo "HTTP $code"
           if [ "$code" != "200" ]; then
-            echo "::error::app did not answer 200 -- it may be sleeping, broken, or renamed"
+            echo "::error::the edge did not answer 200 -- the app may be renamed or removed"
             exit 1
           fi
+          # A 200 here is Streamlit's *shell*, not the app. There is no
+          # anonymous endpoint that reports whether the Python process booted:
+          # /healthz is Community Cloud's proxy and /_stcore/health redirects
+          # to the session handshake. So this job keeps the app from idling and
+          # catches the URL disappearing -- it is not an uptime check, and a
+          # green run does not mean the app runs.
