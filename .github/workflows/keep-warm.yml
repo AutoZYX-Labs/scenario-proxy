@@ -1,41 +1,75 @@
-# Community Cloud suspends an app that has not been visited for a while, and
-# the next visitor is met with "This app has gone to sleep due to inactivity"
-# inside the frame -- which, arriving from a button on driveresearch.tech,
-# reads as broken. This is a daily request so that never happens.
+# Community Cloud suspends an app that nobody has visited, and the next visitor
+# is met with "This app has gone to sleep due to inactivity" inside the frame --
+# arriving from a button on driveresearch.tech, that reads as broken.
 #
-# Once a day. The idle threshold is not documented anywhere Streamlit publishes,
-# but every account of it puts it in days rather than hours, so one request each
-# morning should sit comfortably inside it -- and it is about as little
-# synthetic traffic as the job can send and still do its work.
+# This opens a real session once a day, in a headless browser.
+#
+# An HTTP request will not do, and the first version of this job made that
+# mistake: `curl` fetches Streamlit's static shell without ever invoking the
+# Python process, which only runs once a **websocket** session is established.
+# The app was pinged at 04:32 and had gone to sleep again by 08:22, because
+# from Community Cloud's side nothing had visited it.
+#
+# Loading the page properly also gives a real health check, which the ping
+# could not: the job fails if the app does not render, not merely if the edge
+# stops answering.
 name: keep-warm
 
 on:
   schedule:
-    # 04:17 UTC. Not on the hour, because GitHub queues scheduled jobs and the
-    # top of the hour is its busiest slot; and early, so the app is warm before
-    # anyone is likely to follow the button from driveresearch.tech.
+    # 04:17 UTC. Not on the hour -- GitHub queues scheduled jobs and the top of
+    # the hour is its busiest slot, so this typically runs around :30.
     - cron: "17 4 * * *"
   workflow_dispatch:
 
 jobs:
-  ping:
+  visit:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 12
     steps:
-      - name: Wake the app
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install a browser
         run: |
-          # The embed URL, not the bare one: a direct visit answers 303 through
-          # a session handshake, which would make a healthy app look broken.
-          URL="https://scenario-engine.streamlit.app/?embed=true&embed_options=light_theme"
-          code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 120 "$URL")
-          echo "HTTP $code"
-          if [ "$code" != "200" ]; then
-            echo "::error::the edge did not answer 200 -- the app may be renamed or removed"
-            exit 1
-          fi
-          # A 200 here is Streamlit's *shell*, not the app. There is no
-          # anonymous endpoint that reports whether the Python process booted:
-          # /healthz is Community Cloud's proxy and /_stcore/health redirects
-          # to the session handshake. So this job keeps the app from idling and
-          # catches the URL disappearing -- it is not an uptime check, and a
-          # green run does not mean the app runs.
+          pip install --quiet playwright
+          playwright install --with-deps chromium
+
+      - name: Open the app and wait for it to render
+        run: |
+          python - <<'PY'
+          import sys
+          from playwright.sync_api import sync_playwright
+
+          URL = ("https://scenario-engine.streamlit.app/"
+                 "?embed=true&embed_options=light_theme")
+
+          with sync_playwright() as p:
+              browser = p.chromium.launch()
+              page = browser.new_page()
+              page.goto(URL, wait_until="domcontentloaded", timeout=120_000)
+
+              # A cold container can take minutes: Community Cloud reinstalls
+              # requirements.txt, and casadi, scipy and matplotlib are not quick.
+              try:
+                  # Text this app renders and Streamlit's shell does not, so it
+                  # cannot pass on a chrome-only page.
+                  page.wait_for_selector("text=Corpus statistics", timeout=480_000)
+              except Exception as exc:
+                  page.screenshot(path="failure.png", full_page=True)
+                  print("::error::the app did not render: %s" % exc)
+                  browser.close()
+                  sys.exit(1)
+
+              print("rendered:", page.title())
+              browser.close()
+          PY
+
+      - name: Keep the screenshot when it failed
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: failure
+          path: failure.png
+          if-no-files-found: ignore
