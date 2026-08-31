@@ -39,6 +39,7 @@ jobs:
       - name: Open the app and wait for it to render
         run: |
           python - <<'PY'
+          import re
           import sys
           from playwright.sync_api import sync_playwright
 
@@ -49,6 +50,19 @@ jobs:
               browser = p.chromium.launch()
               page = browser.new_page()
               page.goto(URL, wait_until="domcontentloaded", timeout=120_000)
+
+              # If it has already slept, the page is Community Cloud's dialog
+              # rather than the app, and it waits for a *click*. Loading the URL
+              # is not enough on its own -- which is what the previous run found
+              # out, timing out against an app that was never going to render.
+              wake = page.get_by_role("button", name=re.compile(
+                  "get this app back up", re.I))
+              try:
+                  if wake.count():
+                      print("it was asleep; waking it")
+                      wake.first.click()
+              except Exception:
+                  pass
 
               # A cold container can take minutes: Community Cloud reinstalls
               # requirements.txt, and casadi, scipy and matplotlib are not quick.
