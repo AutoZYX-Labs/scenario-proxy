@@ -60,24 +60,25 @@ jobs:
 
               page.goto(URL, wait_until="domcontentloaded", timeout=120_000)
 
-              # If it has already slept, the page is Community Cloud's dialog
-              # and it waits for a *click*; loading the URL is not enough.
-              try:
-                  wake = page.get_by_role("button", name=re.compile(
-                      "get this app back up", re.I))
-                  if wake.count():
-                      print("it was asleep; waking it")
-                      wake.first.click()
-              except Exception:
-                  pass
-
-              # Not a selector. Community Cloud serves a wrapper that *iframes*
-              # the app -- which is why its badge and bottom bar sit outside the
-              # app's DOM, and why waiting for the app's own heading in the main
-              # frame timed out for eight minutes against a page that had
-              # rendered perfectly well.
+              # Keep looking for the wake button, rather than checking once.
+              # Community Cloud renders "Zzzz / Yes, get this app back up!" with
+              # JavaScript *after* DOMContentLoaded, so a single check straight
+              # after goto() finds nothing, clicks nothing, and then waits out
+              # the full timeout against a dialog that was never going to open a
+              # socket on its own. That is what every scheduled run did.
               deadline = time.time() + 480
+              clicked = False
               while time.time() < deadline and not sockets:
+                  if not clicked:
+                      try:
+                          wake = page.get_by_role("button", name=re.compile(
+                              "get this app back up", re.I))
+                          if wake.count():
+                              print("it was asleep; waking it")
+                              wake.first.click()
+                              clicked = True
+                      except Exception:
+                          pass
                   page.wait_for_timeout(2_000)
 
               if not sockets:
